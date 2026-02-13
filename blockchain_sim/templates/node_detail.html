@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Node Detail - {{ node.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="p-6">
+    <div class="max-w-5xl mx-auto space-y-6">
+        <a href="/" class="text-blue-400 hover:text-blue-300 mb-4 inline-block">&larr; Back to Dashboard</a>
+
+        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-xl flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-white">{{ node.name }}</h1>
+                <p class="text-gray-400 text-sm">ID: {{ node.id }}</p>
+                <div class="mt-2 space-x-2">
+                    <span class="px-2 py-1 rounded bg-blue-900 text-blue-200 text-xs font-bold">Role: Validator</span>
+                    <span class="px-2 py-1 rounded bg-purple-900 text-purple-200 text-xs font-bold">Balance: <span
+                            id="node-balance">{{ node.balance }}</span></span>
+                    {% if node.is_malicious %}
+                    <span id="malicious-tag"
+                        class="px-2 py-1 rounded bg-red-900 text-red-200 text-xs font-bold animate-pulse">MALICIOUS</span>
+                    {% else %}
+                    <span id="malicious-tag"
+                        class="hidden px-2 py-1 rounded bg-red-900 text-red-200 text-xs font-bold animate-pulse">MALICIOUS</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="text-right">
+                <div id="node-reputation"
+                    class="text-4xl font-bold {% if node.reputation > 80 %}text-green-400{% elif node.reputation < 50 %}text-red-400{% else %}text-yellow-400{% endif %}">
+                    {{ node.reputation|floatformat:1 }}
+                </div>
+                <div class="text-gray-400 text-sm">Reputation Score</div>
+            </div>
+        </div>
+
+        <div id="network-config-container"
+            class="bg-gray-800 p-4 rounded-lg border border-gray-700 {% if not network_config %}hidden{% endif %}">
+            <h3 class="text-lg font-semibold mb-2 text-blue-300">Network Conditions</h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <span class="text-gray-400">Delay Range:</span>
+                    <span id="node-delay" class="font-mono text-white">
+                        {% if network_config %}
+                        {{ network_config.delay_range.0|floatformat:3 }} - {{ network_config.delay_range.1|floatformat:3 }} sec
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4 text-blue-300">Network Traffic</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between"><span>Sent</span> <span id="node-sent" 
+                            class="font-mono">{{ node.packets_sent }}</span></div>
+                    <div class="flex justify-between"><span>Received</span> <span id="node-received"
+                            class="font-mono">{{ node.packets_received }}</span></div>
+                    <div class="flex justify-between text-red-400"><span>Dropped</span> <span id="node-dropped"
+                            class="font-mono">{{ node.packets_dropped }}</span></div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4 text-green-300">Energy Trading</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between"><span>Success</span> <span id="node-trade-success"
+                            class="font-mono text-green-400">{{ node.trade_success_count }}</span></div>
+                    <div class="flex justify-between"><span>Failures</span> <span id="node-trade-failure"
+                            class="font-mono text-red-400">{{ node.trade_failure_count }}</span></div>
+                    <div class="flex justify-between"><span>Success Rate</span>
+                        <span id="node-trade-rate" class="font-mono">
+                            {% widthratio node.trade_success_count node.trade_success_count|add:node.trade_failure_count|default:1 100 %}%
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4 text-purple-300">Activity</h3>
+                <canvas id="activityChart"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-semibold mb-4">Recent Internal Metrics</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left text-gray-400">
+                    <thead class="text-xs text-gray-200 uppercase bg-gray-700">
+                        <tr>
+                            <th class="px-4 py-2">Time</th>
+                            <th class="px-4 py-2">Metric</th>
+                            <th class="px-4 py-2">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metrics-body">
+                        {% for m in metrics %}
+                        <tr class="border-b border-gray-700 hover:bg-gray-700/50">
+                            <td class="px-4 py-2">{{ m.timestamp }}</td>
+                            <td class="px-4 py-2 text-blue-300">{{ m.metric_type }}</td>
+                            <td class="px-4 py-2 font-mono">{{ m.value }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        const NODE_ID = "{{ node.id }}";
+        const ctx = document.getElementById('activityChart').getContext('2d');
+        const activityChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Sent', 'Recv', 'Drop'],
+                datasets: [{
+                    data: [{{ node.packets_sent }}, {{ node.packets_received }}, {{ node.packets_dropped }}],
+                backgroundColor: ['#3b82f6', '#10b981', '#ef4444'],
+                    borderWidth: 0
+                        }]
+                    },
+                options: { cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: '#9ca3af' } } } }
+                });
+
+        async function updateNodeDetail() {
+            try {
+                const res = await fetch(`/api/node/${NODE_ID}/`);
+                if (!res.ok) return;
+                const data = await res.json();
+
+                document.getElementById('node-balance').innerText = data.balance;
+                document.getElementById('node-sent').innerText = data.packets_sent;
+                document.getElementById('node-received').innerText = data.packets_received;
+                document.getElementById('node-dropped').innerText = data.packets_dropped;
+
+                document.getElementById('node-trade-success').innerText = data.trade_success_count;
+                document.getElementById('node-trade-failure').innerText = data.trade_failure_count;
+
+                const total = data.trade_success_count + data.trade_failure_count;
+                const rate = total > 0 ? Math.round((data.trade_success_count / total) * 100) : 0;
+                document.getElementById('node-trade-rate').innerText = `${rate}%`;
+
+                const repEl = document.getElementById('node-reputation');
+                repEl.innerText = data.reputation.toFixed(1);
+                repEl.className = `text-4xl font-bold ${data.reputation > 80 ? 'text-green-400' : (data.reputation < 50 ? 'text-red-400' : 'text-yellow-400')}`;
+
+                if (data.network_config && data.network_config.delay_range) {
+                    const minD = data.network_config.delay_range[0].toFixed(3);
+                    const maxD = data.network_config.delay_range[1].toFixed(3);
+                    document.getElementById('node-delay').innerText = `${minD} - ${maxD} sec`;
+                    document.getElementById('network-config-container').classList.remove('hidden');
+                } else {
+                    document.getElementById('network-config-container').classList.add('hidden');
+                }
+
+                if (data.is_malicious) {
+                    document.getElementById('malicious-tag').classList.remove('hidden');
+                } else {
+                    document.getElementById('malicious-tag').classList.add('hidden');
+                }
+
+                activityChart.data.datasets[0].data = [data.packets_sent, data.packets_received, data.packets_dropped];
+                activityChart.update();
+
+                const tbody = document.getElementById('metrics-body');
+                tbody.innerHTML = data.metrics.map(m => `
+                    <tr class="border-b border-gray-700 hover:bg-gray-700/50">
+                        <td class="px-4 py-2">${new Date(m.timestamp * 1000).toISOString().replace('T', ' ').substring(0, 19)}</td>
+                        <td class="px-4 py-2 text-blue-300">${m.metric_type}</td>
+                        <td class="px-4 py-2 font-mono">${m.value}</td>
+                    </tr>
+                `).join('');
+
+            } catch (e) {
+                console.error("Update failed", e);
+            }
+        }
+
+        setInterval(updateNodeDetail, 2000);
+    </script>
+</body>
+
+</html>

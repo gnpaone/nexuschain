@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "nexus-block"
+version = "0.1.0"
+description = "Blockchain Simulator"
+authors = ["Naveen Prashanth <78990165+gnpaone@users.noreply.github.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+Django = "^5.0"
+psycopg2-binary = "^2.9"
+numpy = "^1.26"
+cryptography = "^42.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
